@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -7,9 +7,10 @@ import {
   TouchableOpacity,
   ActivityIndicator,
 } from 'react-native';
-import { MoreVertical } from 'lucide-react-native';
+import { MoreVertical, Download, Check } from 'lucide-react-native';
 import { Track } from '../../core/types';
 import { COLORS, SIZES, FONTS } from '../../constants/theme';
+import { DownloadService } from '../../services/DownloadService';
 
 interface TrackRowProps {
   track: Track;
@@ -34,13 +35,39 @@ const TrackRowComponent: React.FC<TrackRowProps> = ({
     [onMorePress, track]
   );
 
+  // Live download status for this one row -- DownloadService is a global
+  // singleton, so each row subscribes independently rather than needing a
+  // context provider just for this.
+  const [downloaded, setDownloaded] = useState(() => DownloadService.isDownloaded(track.id));
+  const [progress, setProgress] = useState<number | undefined>(() =>
+    DownloadService.getProgress(track.id)
+  );
+
+  useEffect(() => {
+    const sync = () => {
+      setDownloaded(DownloadService.isDownloaded(track.id));
+      setProgress(DownloadService.getProgress(track.id));
+    };
+    sync();
+    return DownloadService.subscribe(sync);
+  }, [track.id]);
+
+  const handleDownloadPress = useCallback(() => {
+    if (downloaded || progress !== undefined) return; // already saved, or in progress
+    void DownloadService.startDownload(track);
+  }, [downloaded, progress, track]);
+
   return (
     <TouchableOpacity
       style={styles.container}
       activeOpacity={0.7}
       onPress={handlePress}
     >
-      <Image source={{ uri: track.albumImageUrl }} style={styles.image} />
+      <Image
+        source={{ uri: track.albumImageUrl }}
+        style={styles.image}
+        resizeMode="cover"
+      />
 
       <View style={styles.infoContainer}>
         <Text style={[styles.title, isPlaying && styles.playingTitle]} numberOfLines={1}>
@@ -50,6 +77,24 @@ const TrackRowComponent: React.FC<TrackRowProps> = ({
           {track.artist.name}
         </Text>
       </View>
+
+      {progress !== undefined ? (
+        <View style={styles.downloadButton}>
+          <ActivityIndicator size="small" color={COLORS.text.secondary} />
+        </View>
+      ) : (
+        <TouchableOpacity
+          style={styles.downloadButton}
+          onPress={handleDownloadPress}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          {downloaded ? (
+            <Check color={COLORS.accent.green} size={18} />
+          ) : (
+            <Download color={COLORS.text.secondary} size={18} />
+          )}
+        </TouchableOpacity>
+      )}
 
       {isLoading ? (
         <View style={styles.moreButton}>
@@ -106,5 +151,8 @@ const styles = StyleSheet.create({
   },
   moreButton: {
     padding: SIZES.sm,
-  }
+  },
+  downloadButton: {
+    padding: SIZES.sm,
+  },
 });
