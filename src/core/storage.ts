@@ -86,4 +86,6 @@ export const STORAGE_KEYS = {
   searchHistory: 'search-history',
   cache: 'cache',
   history: 'history',
+  downloads: 'downloads',
+  tasteScores: 'taste-scores',
 } as const;
