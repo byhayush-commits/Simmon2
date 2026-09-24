@@ -8,7 +8,7 @@ import React, {
   useState,
   ReactNode,
 } from 'react';
-import { AppState, Platform } from 'react-native';
+import { AppState, Platform, PermissionsAndroid } from 'react-native';
 import { AppError, messageFor, toAppError } from '../core/errors';
 import { RepeatMode, Track } from '../core/types';
 import { flushWrites, readJson, writeJsonDebounced, STORAGE_KEYS } from '../core/storage';
@@ -18,6 +18,13 @@ import { preloader } from '../playback/preload';
 import { endpointSource } from '../providers/stream/StreamResolver';
 import { LibraryService } from '../services/LibraryService';
 import { MusicService } from '../services/MusicService';
+import { DownloadService } from '../services/DownloadService';
+import { TasteService } from '../services/TasteService';
+import {
+  PlaybackControls,
+  useRemoteCommand,
+  type PlaybackSession,
+} from 'react-native-playback-controls';
 
 type PlayerContextType = {
   // --- the original mock API, unchanged so existing screens keep working ---
@@ -232,6 +239,11 @@ export const PlayerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   useEffect(() => {
     playbackEngine.on('onStatus', (s) => setStatus(s));
     playbackEngine.on('onComplete', () => {
+      // Capture before advancing -- queueRef.current.current is about to
+      // point at whatever plays next.
+      const finishedTrack = queueRef.current.current;
+      if (finishedTrack) TasteService.recordComplete(finishedTrack);
+
       // `auto` so repeat-one replays rather than advances.
       const nextTrack = queueRef.current.next(true);
       bumpQueue();
@@ -281,7 +293,12 @@ export const PlayerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     let cancelled = false;
     (async () => {
       try {
-        await Promise.all([MusicService.init(), LibraryService.load()]);
+        await Promise.all([
+          MusicService.init(),
+          LibraryService.load(),
+          DownloadService.load(),
+          TasteService.load(),
+        ]);
         if (cancelled) return;
 
         const settings = LibraryService.getSettings();
@@ -339,6 +356,7 @@ export const PlayerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     if (positionSecond >= threshold && positionSecond > 0) {
       historyWrittenFor.current = currentTrack.id;
       LibraryService.recordListen(currentTrack);
+      TasteService.recordListen(currentTrack);
       if (__DEV__) console.log('[history] logged', currentTrack.title);
     }
   }, [currentTrack, positionSecond, status.duration]);
@@ -398,6 +416,13 @@ export const PlayerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   }, [bumpQueue, currentTrack, loadCurrent, status.isPlaying]);
 
   const next = useCallback(() => {
+    // A track left before it counted as a genuine listen (see the history
+    // effect above) was passed on, not finished -- a real taste signal.
+    const leavingTrack = queueRef.current.current;
+    if (leavingTrack && historyWrittenFor.current !== leavingTrack.id) {
+      TasteService.recordSkip(leavingTrack);
+    }
+
     const nextTrack = queueRef.current.next(false);
     bumpQueue();
     persistQueue();
@@ -413,6 +438,10 @@ export const PlayerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     if (statusRef.current.position > 3) {
       void playbackEngine.seekTo(0);
       return;
+    }
+    const leavingTrack = queueRef.current.current;
+    if (leavingTrack && historyWrittenFor.current !== leavingTrack.id) {
+      TasteService.recordSkip(leavingTrack);
     }
     queueRef.current.previous();
     bumpQueue();
@@ -567,6 +596,88 @@ export const PlayerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   // Prefer the source-reported duration, falling back to provider metadata
   // so the scrubber is usable before the stream reports one.
   const duration = status.duration || currentTrack?.duration || 0;
+
+  // --- Android lock screen / notification media controls ---------------
+  //
+  // expo-audio never registers a native MediaSession, so without this the
+  // OS falls back to a generic notification with +/-10s seek buttons
+  // instead of real Next/Previous. This library owns only that system-level
+  // "now playing" surface -- playback itself is still 100% expo-audio via
+  // playbackEngine, untouched.
+  const [mediaSession, setMediaSession] = useState<PlaybackSession | null>(null);
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    let cancelled = false;
+    let activeSession: PlaybackSession | null = null;
+
+    (async () => {
+      // Android 13+ won't show the notification without this; the library
+      // deliberately never requests it for us. startSession itself still
+      // succeeds either way, just silently without a visible notification.
+      if (Platform.Version >= 33) {
+        await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS
+        ).catch(() => undefined);
+      }
+      try {
+        const session = await PlaybackControls.startSession({
+          commands: ['play', 'pause', 'toggle-play-pause', 'next-track', 'previous-track'],
+        });
+        if (cancelled) {
+          void session.end();
+          return;
+        }
+        activeSession = session;
+        setMediaSession(session);
+      } catch {
+        // e.g. `foreground-required` if this ever runs from the background --
+        // the app just falls back to no lock screen controls, nothing else breaks.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      void activeSession?.end();
+      setMediaSession(null);
+    };
+  }, []);
+
+  // Keep the lock screen's title/artist/artwork in sync with the loaded track.
+  useEffect(() => {
+    if (!mediaSession || mediaSession.isEnded) return;
+    if (!currentTrack) return;
+    // Always the full object -- Android replaces rather than merges, so a
+    // partial call here would silently blank out omitted fields.
+    mediaSession.setNowPlaying({
+      title: currentTrack.title,
+      artist: currentTrack.artist?.name,
+      artwork: currentTrack.albumImageUrl || undefined,
+      durationSec: currentTrack.duration || undefined,
+    });
+  }, [mediaSession, currentTrack]);
+
+  // Keep the lock screen's play/pause state and seek bar in sync. Only on
+  // real transitions (per the library's docs) -- never on a position-polling
+  // timer, which status.position would turn this into if it were a dep.
+  useEffect(() => {
+    if (!mediaSession || mediaSession.isEnded) return;
+    mediaSession.setPlaybackState({
+      status: status.isBuffering ? 'buffering' : status.isPlaying ? 'playing' : 'paused',
+      positionSec: statusRef.current.position,
+    });
+  }, [mediaSession, status.isPlaying, status.isBuffering]);
+
+  useRemoteCommand(mediaSession, 'play', () => {
+    if (!statusRef.current.isPlaying) togglePlayPause();
+  });
+  useRemoteCommand(mediaSession, 'pause', () => {
+    if (statusRef.current.isPlaying) togglePlayPause();
+  });
+  useRemoteCommand(mediaSession, 'toggle-play-pause', togglePlayPause);
+  useRemoteCommand(mediaSession, 'next-track', next);
+  useRemoteCommand(mediaSession, 'previous-track', previous);
+  // ------------------------------------------------------------------------
 
   const value = useMemo<PlayerContextType>(
     () => ({
