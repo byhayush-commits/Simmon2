@@ -43,6 +43,47 @@ export class DirectStreamSource implements StreamSource {
   }
 }
 
+/**
+ * Serves tracks that were downloaded for offline playback.
+ *
+ * Kept as a small standalone in-memory registry rather than importing
+ * DownloadService directly -- DownloadService needs streamResolver (via
+ * MusicService) to fetch a URL to download in the first place, so the
+ * reverse import here would create a cycle. DownloadService pushes into
+ * this registry with register()/unregister() instead.
+ */
+export class LocalFileStreamSource implements StreamSource {
+  readonly id = 'local-file';
+  private files = new Map<string, string>(); // trackId -> local file:// uri
+
+  /** Called by DownloadService once a download finishes (and on app start). */
+  register(trackId: string, localUri: string): void {
+    this.files.set(trackId, localUri);
+  }
+
+  /** Called by DownloadService when a download is deleted. */
+  unregister(trackId: string): void {
+    this.files.delete(trackId);
+  }
+
+  canHandle(track: Track): boolean {
+    return this.files.has(track.id);
+  }
+
+  async resolve(track: Track): Promise<ResolvedStream> {
+    const url = this.files.get(track.id);
+    if (!url) throw appError('source_unavailable', 'Download was removed');
+    return {
+      url,
+      // A local file never goes stale the way a signed remote URL does.
+      expiresAt: Number.MAX_SAFE_INTEGER,
+      resolvedBy: this.id,
+    };
+  }
+}
+
+export const localFileSource = new LocalFileStreamSource();
+
 type EndpointKind = 'invidious' | 'piped' | 'custom';
 
 export type ResolverEndpoint = {
@@ -274,6 +315,8 @@ export class StreamResolverChain {
 export const endpointSource = new EndpointStreamSource();
 
 export const streamResolver = new StreamResolverChain()
+  // Downloaded tracks win over everything else -- no network hit at all.
+  .use(localFileSource)
   .use(new DirectStreamSource())
   // Android resolves on-device first; every other platform falls straight
   // through to the configured endpoints, exactly as before.
