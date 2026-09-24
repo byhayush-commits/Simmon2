@@ -115,7 +115,11 @@ export const MiniPlayer: React.FC<MiniPlayerProps> = ({
         <MiniPlayerProgress />
 
         <View style={styles.content}>
-          <Image source={{ uri: track.albumImageUrl }} style={styles.image} />
+          <Image
+            source={{ uri: track.albumImageUrl }}
+            style={styles.image}
+            resizeMode="cover"
+          />
 
           <View style={styles.infoContainer}>
             <MarqueeTitle text={track.title} />

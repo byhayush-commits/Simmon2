@@ -177,7 +177,11 @@ export const QueueSheet: React.FC<QueueSheetProps> = ({
           {/* Now playing row — pink + animated EQ, per Image 4 */}
           {currentTrack && (
             <View style={styles.currentRow}>
-              <Image source={{ uri: currentTrack.albumImageUrl }} style={styles.artwork} />
+              <Image
+                source={{ uri: currentTrack.albumImageUrl }}
+                style={styles.artwork}
+                resizeMode="cover"
+              />
               <View style={styles.currentTextWrap}>
                 <Text style={styles.currentTitle} numberOfLines={1}>{currentTrack.title}</Text>
                 <Text style={styles.currentArtist} numberOfLines={1}>{currentTrack.artist.name}</Text>
@@ -206,7 +210,11 @@ export const QueueSheet: React.FC<QueueSheetProps> = ({
                     activeOpacity={0.7}
                     onPress={() => onJump(track.id)}
                   >
-                    <Image source={{ uri: track.albumImageUrl }} style={styles.artwork} />
+                    <Image
+                      source={{ uri: track.albumImageUrl }}
+                      style={styles.artwork}
+                      resizeMode="cover"
+                    />
                     <View style={styles.rowTextWrap}>
                       <Text style={styles.rowTitle} numberOfLines={1}>{track.title}</Text>
                       <Text style={styles.rowArtist} numberOfLines={1}>{track.artist.name}</Text>
