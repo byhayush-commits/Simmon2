@@ -11,20 +11,34 @@ import {
   Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Heart, Clock, Pencil, Check, X, Hammer, Info, Activity, Package } from 'lucide-react-native';
-import Svg, { Circle, Rect } from 'react-native-svg';
+import {
+  Heart,
+  Clock,
+  Pencil,
+  Check,
+  Hammer,
+  Info,
+  Activity,
+  Package,
+  Shield,
+  Bot,
+} from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { COLORS, SIZES, FONTS } from '../constants/theme';
 import { Header } from '../components/common/Header';
+import { StatCard } from '../components/common/StatCard';
 import { ListRow } from '../components/common/ListRow';
 import { FlowerMark } from '../components/common/FlowerMark';
 import { Gender } from '../services/LibraryService';
 import { useLibrary } from '../hooks/useLibrary';
 
-type StackParams = { History: undefined };
+type StackParams = {
+  History: undefined;
+  Playlist: { playlistId: string };
+};
 
 const GENDERS: { value: Gender; label: string }[] = [
   { value: 'male', label: 'Male' },
@@ -53,14 +67,15 @@ const DEPENDENCIES: { name: string; version: string }[] = [
   { name: 'NewPipe Extractor', version: 'v0.26.5' },
 ];
 
-/** Inline Instagram glyph (lucide dropped brand icons) — used only in the follow capsule. */
-const InstagramGlyph: React.FC<{ size?: number; color?: string }> = ({ size = 18, color = '#FFFFFF' }) => (
-  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-    <Rect x="3" y="3" width="18" height="18" rx="5.5" stroke={color} strokeWidth={2} />
-    <Circle cx="12" cy="12" r="4.2" stroke={color} strokeWidth={2} />
-    <Circle cx="17.1" cy="6.9" r="1.3" fill={color} />
-  </Svg>
-);
+/** What Jarvis watches, locally, to personalise the app. */
+const JARVIS_PARAMS: { name: string; value: string }[] = [
+  { name: 'Retention rate', value: 'how often you replay a track' },
+  { name: 'Skip rate', value: 'how quickly you move past songs' },
+  { name: 'Completion rate', value: 'tracks you hear to the end' },
+  { name: 'Listening windows', value: 'your peak hours of the day' },
+  { name: 'Genre affinity', value: 'artists & styles you return to' },
+  { name: 'Queue depth', value: 'how long your sessions run' },
+];
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
@@ -74,6 +89,8 @@ export default function ProfileScreen() {
   const [showSystemInfo, setShowSystemInfo] = useState(false);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [showDependencies, setShowDependencies] = useState(false);
+  const [showPrivacy, setShowPrivacy] = useState(false);
+  const [showJarvis, setShowJarvis] = useState(false);
 
   useEffect(() => {
     AsyncStorage.getItem('@aurix_profile_pic').then((uri) => {
@@ -166,10 +183,7 @@ export default function ProfileScreen() {
               autoFocus
             />
           ) : (
-            <View style={{ flex: 1 }}>
-              <Text style={styles.name}>{profile.name || 'No name set'}</Text>
-              <Text style={styles.nameKicker}>LOCAL PROFILE</Text>
-            </View>
+            <Text style={styles.name}>{profile.name || 'No name set'}</Text>
           )}
         </View>
 
@@ -197,25 +211,21 @@ export default function ProfileScreen() {
           </>
         )}
 
-        {/* ---- stats ---- */}
+        {/* ---- stats (original StatCard look, both tappable) ---- */}
         <View style={styles.statsRow}>
-          <View style={styles.statCard}>
-            <View style={styles.statTop}>
-              <Text style={styles.statValue}>{liked.length}</Text>
-              <Heart color={COLORS.accent.green} size={16} />
-            </View>
-            <Text style={styles.statLabel}>Liked Songs</Text>
-          </View>
           <TouchableOpacity
-            style={styles.statCard}
+            style={styles.statTouchable}
+            activeOpacity={0.8}
+            onPress={() => navigation.navigate('Playlist', { playlistId: 'liked' })}
+          >
+            <StatCard icon={<Heart color={COLORS.accent.green} size={20} />} value={liked.length} label="Liked Songs" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.statTouchable}
             activeOpacity={0.8}
             onPress={() => navigation.navigate('History')}
           >
-            <View style={styles.statTop}>
-              <Text style={styles.statValue}>{history.length}</Text>
-              <Clock color={COLORS.accent.green} size={16} />
-            </View>
-            <Text style={styles.statLabel}>Listening History</Text>
+            <StatCard icon={<Clock color={COLORS.accent.green} size={20} />} value={history.length} label="Listening History" />
           </TouchableOpacity>
         </View>
 
@@ -233,7 +243,7 @@ export default function ProfileScreen() {
           <ListRow label="Source code" onPress={() => open(REPO_URL)} showDivider={false} />
         </View>
 
-        {/* ---- development ---- */}
+        {/* ---- development (plain sleek expansion, like every other row) ---- */}
         <Text style={styles.sectionLabel}>DEVELOPMENT</Text>
         <View style={styles.group}>
           <ListRow
@@ -243,32 +253,16 @@ export default function ProfileScreen() {
             showDivider={showBuilder}
           />
           {showBuilder && (
-            <View style={styles.builderCard}>
-              <TouchableOpacity
-                style={styles.builderClose}
-                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                onPress={() => setShowBuilder(false)}
-              >
-                <X color={COLORS.text.secondary} size={18} />
-              </TouchableOpacity>
-
+            <View style={styles.builderBlock}>
               <View style={styles.builderRow}>
-                <FlowerMark size={64} />
+                <FlowerMark size={32} />
                 <View style={styles.builderInfo}>
                   <Text style={styles.builderName}>Ayush</Text>
                   <Text style={styles.builderHandle}>@vivac_ayu</Text>
                 </View>
               </View>
-
-              <View style={styles.builderDivider} />
-
-              <TouchableOpacity
-                style={styles.followCapsule}
-                activeOpacity={0.8}
-                onPress={() => open(IG_URL)}
-              >
-                <InstagramGlyph size={18} />
-                <Text style={styles.followText}>Tap to Follow</Text>
+              <TouchableOpacity style={styles.followPill} activeOpacity={0.8} onPress={() => open(IG_URL)}>
+                <Text style={styles.followPillText}>Tap to Follow</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -341,6 +335,54 @@ export default function ProfileScreen() {
           )}
         </View>
 
+        {/* ---- data use (above the last group) ---- */}
+        <Text style={styles.sectionLabel}>DATA USE</Text>
+        <View style={styles.group}>
+          <ListRow
+            icon={<Shield color={COLORS.text.primary} size={20} />}
+            label="Privacy Policy"
+            onPress={() => setShowPrivacy((v) => !v)}
+            showDivider={showPrivacy}
+          />
+          {showPrivacy && (
+            <View style={styles.infoBlock}>
+              <Text style={styles.policyText}>
+                Aurix collects nothing. There are no accounts, no analytics, no telemetry and
+                no servers — everything you do stays on this device.
+                {'\n\n'}
+                The only details you ever enter are your name, age and gender, and they exist
+                purely to personalise your local profile. They never leave your phone.
+                {'\n\n'}
+                Your library, likes, history and queue live in local storage and are erased
+                the moment you uninstall the app. What you listen to is nobody's business —
+                not even ours.
+              </Text>
+            </View>
+          )}
+
+          <ListRow
+            icon={<Bot color={COLORS.text.primary} size={20} />}
+            label="Jarvis"
+            onPress={() => setShowJarvis((v) => !v)}
+            showDivider={showJarvis}
+          />
+          {showJarvis && (
+            <View style={styles.infoBlock}>
+              <Text style={styles.policyText}>
+                Jarvis is the on-device engine that learns how you listen and shapes your
+                Home shelves and recommendations. It studies these parameters across your
+                songs — computed locally, never uploaded:
+              </Text>
+              {JARVIS_PARAMS.map((param) => (
+                <View key={param.name} style={styles.infoLine}>
+                  <Text style={styles.infoKey}>{param.name}</Text>
+                  <Text style={styles.infoValue}>{param.value}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
+
         {/* ---- support ---- */}
         <Text style={styles.sectionLabel}>SUPPORT</Text>
         <View style={styles.group}>
@@ -363,14 +405,14 @@ const styles = StyleSheet.create({
     marginBottom: SIZES.lg,
   },
   avatar: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     backgroundColor: COLORS.surfaceLight,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarImage: { width: '100%', height: '100%', borderRadius: 34 },
+  avatarImage: { width: '100%', height: '100%', borderRadius: 32 },
   cameraBadge: {
     position: 'absolute',
     bottom: 0,
@@ -386,13 +428,6 @@ const styles = StyleSheet.create({
   },
   avatarInitial: { fontFamily: FONTS.extrabold, fontSize: 26, color: COLORS.text.primary },
   name: { fontFamily: FONTS.bold, fontSize: 24, color: COLORS.text.primary },
-  nameKicker: {
-    fontFamily: FONTS.medium,
-    fontSize: 10,
-    letterSpacing: 2,
-    color: COLORS.text.muted,
-    marginTop: 3,
-  },
   nameInput: {
     flex: 1,
     fontFamily: FONTS.bold,
@@ -437,33 +472,21 @@ const styles = StyleSheet.create({
 
   statsRow: {
     flexDirection: 'row',
-    gap: SIZES.smd,
+    gap: SIZES.md,
     paddingHorizontal: SIZES.md,
     marginBottom: SIZES.xl,
   },
-  statCard: {
-    flex: 1,
-    backgroundColor: COLORS.surfaceLight,
-    borderRadius: SIZES.radius.lg,
-    paddingHorizontal: SIZES.md,
-    paddingVertical: SIZES.md,
-  },
-  statTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 2,
-  },
-  statValue: { fontFamily: FONTS.extrabold, fontSize: 26, color: COLORS.text.primary },
-  statLabel: { fontFamily: FONTS.regular, fontSize: 12, color: COLORS.text.secondary },
+  statTouchable: { flex: 1 },
 
+  /* Labels sit at 32dp so they line up with the content inside the cards. */
   sectionLabel: {
     fontFamily: FONTS.semibold,
     fontSize: 11,
     letterSpacing: 2,
     color: COLORS.text.muted,
     marginBottom: SIZES.sm,
-    marginHorizontal: SIZES.md,
+    marginLeft: SIZES.xl,
+    marginRight: SIZES.md,
   },
   group: {
     marginHorizontal: SIZES.md,
@@ -482,6 +505,37 @@ const styles = StyleSheet.create({
   aboutLabel: { fontFamily: FONTS.regular, fontSize: 15, color: COLORS.text.secondary },
   aboutValue: { fontFamily: FONTS.medium, fontSize: 15, color: COLORS.text.primary },
 
+  /* Builder expansion — plain and sleek, same language as every other row. */
+  builderBlock: {
+    paddingHorizontal: SIZES.md,
+    paddingTop: SIZES.xs,
+    paddingBottom: SIZES.md,
+  },
+  builderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SIZES.smd,
+    marginBottom: SIZES.md,
+  },
+  builderInfo: { flex: 1 },
+  builderName: { fontFamily: FONTS.bold, fontSize: 17, color: COLORS.text.primary },
+  builderHandle: {
+    fontFamily: FONTS.regular,
+    fontSize: 13,
+    color: COLORS.text.secondary,
+    marginTop: 2,
+  },
+  followPill: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: SIZES.radius.pill,
+    backgroundColor: COLORS.surfaceRaised,
+    borderWidth: 1,
+    borderColor: COLORS.accent.green,
+    paddingVertical: SIZES.sm + 2,
+  },
+  followPillText: { fontFamily: FONTS.semibold, fontSize: 14, color: COLORS.text.primary },
+
   infoBlock: {
     paddingHorizontal: SIZES.md,
     paddingTop: SIZES.xs,
@@ -493,57 +547,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 6,
   },
-  infoKey: { fontFamily: FONTS.regular, fontSize: 13, color: COLORS.text.secondary },
-  infoValue: { fontFamily: FONTS.medium, fontSize: 13, color: COLORS.text.primary },
-
-  /* ---- builder card (inline expand, image-exact) ---- */
-  builderCard: {
-    marginHorizontal: SIZES.md,
-    marginTop: SIZES.xs,
-    marginBottom: SIZES.md,
-    backgroundColor: COLORS.surface,
-    borderRadius: SIZES.radius.lg,
-    borderWidth: 1,
-    borderColor: 'rgba(250, 45, 85, 0.35)',
-    paddingHorizontal: SIZES.lg,
-    paddingTop: SIZES.md,
-    paddingBottom: SIZES.lg,
-  },
-  builderClose: {
-    position: 'absolute',
-    top: SIZES.sm,
-    right: SIZES.sm,
-    padding: SIZES.xs,
-  },
-  builderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SIZES.lg,
-    paddingTop: SIZES.sm,
-  },
-  builderInfo: { flex: 1 },
-  builderName: { fontFamily: FONTS.bold, fontSize: 22, color: COLORS.text.primary },
-  builderHandle: {
+  infoKey: { fontFamily: FONTS.regular, fontSize: 13, color: COLORS.text.secondary, paddingRight: SIZES.md },
+  infoValue: { fontFamily: FONTS.medium, fontSize: 13, color: COLORS.text.primary, flexShrink: 1, textAlign: 'right' },
+  policyText: {
     fontFamily: FONTS.regular,
-    fontSize: 15,
+    fontSize: 13,
+    lineHeight: 19,
     color: COLORS.text.secondary,
-    marginTop: 4,
+    marginBottom: SIZES.sm,
   },
-  builderDivider: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: 'rgba(250, 45, 85, 0.35)',
-    marginVertical: SIZES.lg,
-  },
-  followCapsule: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: SIZES.smd,
-    borderRadius: SIZES.radius.pill,
-    borderWidth: 1,
-    borderColor: 'rgba(250, 45, 85, 0.55)',
-    backgroundColor: 'rgba(250, 45, 85, 0.08)',
-    paddingVertical: SIZES.md - 2,
-  },
-  followText: { fontFamily: FONTS.semibold, fontSize: 15, color: COLORS.text.primary },
 });
