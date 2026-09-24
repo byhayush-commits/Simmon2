@@ -282,7 +282,11 @@ export default function SearchScreen() {
 
             {!!topResult && (
               <TouchableOpacity style={styles.topResultCard} activeOpacity={0.85} onPress={() => onPlayTrack(topResult)}>
-                <Image source={{ uri: topResult.albumImageUrl }} style={styles.topResultImage} />
+                <Image
+                  source={{ uri: topResult.albumImageUrl }}
+                  style={styles.topResultImage}
+                  resizeMode="cover"
+                />
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={styles.topResultLabel}>TOP RESULT</Text>
                   <Text style={styles.topResultTitle} numberOfLines={1}>{topResult.title}</Text>
@@ -413,7 +417,11 @@ export default function SearchScreen() {
                 {chart.map((track, i) => (
                   <TouchableOpacity key={track.id} style={styles.chartRow} onPress={() => playFrom(chart, 'Top Songs')(track)}>
                     <Text style={styles.chartRank}>{i + 1}</Text>
-                    <Image source={{ uri: track.albumImageUrl }} style={styles.chartImage} />
+                    <Image
+                      source={{ uri: track.albumImageUrl }}
+                      style={styles.chartImage}
+                      resizeMode="cover"
+                    />
                     <View style={{ flex: 1, minWidth: 0 }}>
                       <Text style={styles.trendingTitle} numberOfLines={1}>{track.title}</Text>
                       <Text style={styles.trendingArtist} numberOfLines={1}>{track.artist.name}</Text>

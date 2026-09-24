@@ -20,14 +20,14 @@ import {
   Repeat,
   Repeat1,
   Shuffle,
-  MonitorSpeaker,
   ListMusic,
   ListPlus,
-  Mic2,
+  MessageCircle,
+  Download,
+  Check,
 } from 'lucide-react-native';
 import { COLORS, SIZES, FONTS } from '../constants/theme';
 import { ArtworkBackground } from '../components/player/ArtworkBackground';
-import { PlaybackSourceSheet } from '../components/player/PlaybackSourceSheet';
 import { QueueSheet } from '../components/player/QueueSheet';
 import { SeekBar } from '../components/player/SeekBar';
 import { LyricsView } from '../components/player/LyricsView';
@@ -35,6 +35,7 @@ import { AddToPlaylistSheet } from '../components/lists/AddToPlaylistSheet';
 import { Track } from '../core/types';
 import { usePlayer } from '../hooks/usePlayer';
 import { useLibrary } from '../hooks/useLibrary';
+import { DownloadService } from '../services/DownloadService';
 import { useNavigation } from '@react-navigation/native';
 
 const { width } = Dimensions.get('window');
@@ -112,16 +113,37 @@ export default function NowPlayingScreen() {
     upcoming,
     jumpTo,
     removeFromQueue,
-    canPlayCurrent,
     reorderUpcoming,
   } = usePlayer();
 
   const { isLiked, toggleLike } = useLibrary();
   const [view, setView] = useState<'player' | 'lyrics'>('player');
   const [showQueue, setShowQueue] = useState(false);
-  const [showSource, setShowSource] = useState(false);
   /** Track whose "add to playlist" sheet is open. */
   const [addingTrack, setAddingTrack] = useState<Track | null>(null);
+
+  // Live download status for the current track, same pattern as TrackRow.
+  const [downloaded, setDownloaded] = useState(
+    () => !!currentTrack && DownloadService.isDownloaded(currentTrack.id)
+  );
+  const [downloadProgress, setDownloadProgress] = useState<number | undefined>(
+    () => currentTrack ? DownloadService.getProgress(currentTrack.id) : undefined
+  );
+
+  useEffect(() => {
+    if (!currentTrack) return;
+    const sync = () => {
+      setDownloaded(DownloadService.isDownloaded(currentTrack.id));
+      setDownloadProgress(DownloadService.getProgress(currentTrack.id));
+    };
+    sync();
+    return DownloadService.subscribe(sync);
+  }, [currentTrack?.id]);
+
+  const handleDownloadPress = useCallback(() => {
+    if (!currentTrack || downloaded || downloadProgress !== undefined) return;
+    void DownloadService.startDownload(currentTrack);
+  }, [currentTrack, downloaded, downloadProgress]);
 
   /** Drag-release commit from the queue sheet -> real playback order. */
   const handleReorder = useCallback(
@@ -221,13 +243,17 @@ export default function NowPlayingScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Secondary row — Lyrics / Queue / Source */}
+        {/* Secondary row — Lyrics / Queue / Download */}
         <View style={styles.bottomActions}>
           <TouchableOpacity
             style={styles.secondaryButton}
             onPress={() => setView((v) => (v === 'lyrics' ? 'player' : 'lyrics'))}
           >
-            <Mic2 color={view === 'lyrics' ? COLORS.accent.green : COLORS.text.secondary} size={20} />
+            <MessageCircle
+              color={view === 'lyrics' ? COLORS.accent.green : COLORS.text.secondary}
+              fill={view === 'lyrics' ? COLORS.accent.green : 'transparent'}
+              size={20}
+            />
             <Text style={[styles.secondaryLabel, view === 'lyrics' && styles.secondaryLabelActive]}>
               Lyrics
             </Text>
@@ -236,9 +262,21 @@ export default function NowPlayingScreen() {
             <ListMusic color={COLORS.text.secondary} size={20} />
             <Text style={styles.secondaryLabel}>Queue</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.secondaryButton} onPress={() => setShowSource(true)}>
-            <MonitorSpeaker color={canPlayCurrent ? COLORS.text.secondary : COLORS.accent.red} size={20} />
-            <Text style={styles.secondaryLabel}>Source</Text>
+          <TouchableOpacity
+            style={styles.secondaryButton}
+            onPress={handleDownloadPress}
+            disabled={downloadProgress !== undefined}
+          >
+            {downloadProgress !== undefined ? (
+              <ActivityIndicator size="small" color={COLORS.text.secondary} />
+            ) : downloaded ? (
+              <Check color={COLORS.accent.green} size={20} />
+            ) : (
+              <Download color={COLORS.text.secondary} size={20} />
+            )}
+            <Text style={[styles.secondaryLabel, downloaded && styles.secondaryLabelActive]}>
+              {downloadProgress !== undefined ? 'Downloading' : downloaded ? 'Downloaded' : 'Download'}
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -259,8 +297,7 @@ export default function NowPlayingScreen() {
       />
 
       <AddToPlaylistSheet track={addingTrack} onClose={() => setAddingTrack(null)} />
-      <PlaybackSourceSheet visible={showSource} onClose={() => setShowSource(false)} />
-    </View>
+          </View>
   );
 }
 

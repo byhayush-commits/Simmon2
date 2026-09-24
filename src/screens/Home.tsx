@@ -17,11 +17,13 @@ import { Track } from '../core/types';
 import { usePlayer } from '../hooks/usePlayer';
 import { useLibrary } from '../hooks/useLibrary';
 import { MusicService } from '../services/MusicService';
+import { TasteService } from '../services/TasteService';
 import { MiniPlayer } from '../components/player/MiniPlayer';
 import { StatusBarScrim } from '../components/common/StatusBarScrim';
 import { useNavigation } from '@react-navigation/native';
 import { TrackRow } from '../components/lists/TrackRow';
 import { AddToPlaylistSheet } from '../components/lists/AddToPlaylistSheet';
+import { squareArtOnly } from '../utils/rankResults';
 
 type SectionDef = {
   key: string;
@@ -48,6 +50,14 @@ const SECTIONS: SectionDef[] = [
   { key: 'favorites', title: 'Your Favorites', kind: 'liked', layout: 'v', limit: 10 },
   { key: 'listenMore', title: 'Listen More', kind: 'search', layout: 'v', query: 'evergreen bollywood hits', limit: 7 },
 ];
+
+/**
+ * "search"-kind sections are app-curated (Trending, Made For You, etc.) and
+ * get hard-filtered to square-art-only tracks (see squareArtOnly). Fetching
+ * only the display count would leave sections thin once video-type results
+ * are dropped, so we over-fetch and let dataFor() trim to the real limit.
+ */
+const HOME_SEARCH_FETCH_LIMIT = 24;
 
 /** Equalizer-style "now playing" badge on cards. */
 const PlayingIndicator: React.FC = () => {
@@ -91,7 +101,11 @@ const HomeCard: React.FC<{
 }> = memo(({ track, size, radius, showPlaying, onPress }) => (
   <TouchableOpacity style={{ width: size }} activeOpacity={0.85} onPress={() => onPress(track)}>
     <View style={[styles.cardImageWrap, { width: size, height: size, borderRadius: radius }]}>
-      <Image source={{ uri: track.albumImageUrl }} style={styles.cardImage} />
+      <Image
+        source={{ uri: track.albumImageUrl }}
+        style={styles.cardImage}
+        resizeMode="cover"
+      />
       {showPlaying && <PlayingIndicator />}
     </View>
     <Text style={styles.cardTitle} numberOfLines={1}>{track.title}</Text>
@@ -134,7 +148,7 @@ export default function HomeScreen() {
     const defs = SECTIONS.filter((s) => s.kind === 'search' || s.kind === 'albums');
     const results = await Promise.all(
       defs.map((s) =>
-        MusicService.search(s.query ?? '', { limit: 10 })
+        MusicService.search(s.query ?? '', { limit: s.kind === 'search' ? HOME_SEARCH_FETCH_LIMIT : 10 })
           .then((r) => ({ key: s.key, kind: s.kind, r }))
           .catch(() => ({ key: s.key, kind: s.kind, r: null }))
       )
@@ -156,20 +170,31 @@ export default function HomeScreen() {
           sourceId: a.browseId,
         }));
       } else {
-        map[key] = r.tracks;
+        // "search" sections are app-curated -- hard filter to square art
+        // only (see squareArtOnly's doc comment for why this list, and not
+        // search/history/liked, is safe to filter this way).
+        map[key] = kind === 'search' ? squareArtOnly(r.tracks) : r.tracks;
       }
     }
     setSectionData((m) => ({ ...m, ...map }));
   }, []);
 
-  /** "Based on Your Listening" — built from whoever you play the most. */
-  const relatedQuery = recentlyPlayed[0]?.artist.name
-    ? `${recentlyPlayed[0].artist.name} songs`
-    : 'chill mood playlist';
+  /**
+   * "Based on Your Listening" -- prefers the artist with the highest learned
+   * affinity (TasteService: built from real listens/completions/skips, not
+   * just whichever track happened to play last). Falls back to last-played,
+   * then a generic mood, for a brand-new listener with no signal yet.
+   */
+  const topTasteArtist = TasteService.getTopArtists(1)[0]?.artistName;
+  const relatedQuery = topTasteArtist
+    ? `${topTasteArtist} songs`
+    : recentlyPlayed[0]?.artist.name
+      ? `${recentlyPlayed[0].artist.name} songs`
+      : 'chill mood playlist';
 
   const fetchRelated = useCallback(() => {
-    return MusicService.search(relatedQuery, { limit: 10 })
-      .then((r) => setSectionData((m) => ({ ...m, basedOn: r.tracks })))
+    return MusicService.search(relatedQuery, { limit: HOME_SEARCH_FETCH_LIMIT })
+      .then((r) => setSectionData((m) => ({ ...m, basedOn: squareArtOnly(r.tracks) })))
       .catch(() => undefined);
   }, [relatedQuery]);
 
@@ -280,7 +305,11 @@ export default function HomeScreen() {
                           activeOpacity={0.75}
                           onPress={() => playTrack(track, { tracks: data, label: s.title })}
                         >
-                          <Image source={{ uri: track.albumImageUrl }} style={styles.gridArt} />
+                          <Image
+                            source={{ uri: track.albumImageUrl }}
+                            style={styles.gridArt}
+                            resizeMode="cover"
+                          />
                           <View style={{ flex: 1, minWidth: 0 }}>
                             <Text style={styles.gridTitle} numberOfLines={1}>{track.title}</Text>
                             <Text style={styles.gridArtist} numberOfLines={1}>{track.artist.name}</Text>
