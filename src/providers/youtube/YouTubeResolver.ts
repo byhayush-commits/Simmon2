@@ -11,6 +11,7 @@ import {
 } from '../../core/types';
 import { PlaylistPage, SearchOptions, TrackResolver } from '../TrackResolver';
 import { endpointSource, streamResolver } from '../stream/StreamResolver';
+import { rankTracks } from '../../utils/rankResults';
 import {
   metadataViaEndpoint,
   noEndpointsError,
@@ -71,7 +72,7 @@ export class YouTubeResolver implements TrackResolver {
       if (!fallback) throw this.discoveryError(err);
 
       results = fallback;
-      results.tracks = results.tracks.slice(0, limit);
+      results.tracks = rankTracks(results.tracks).slice(0, limit);
     }
 
     metadataCache.set(cacheKey, results, TTL.search);
@@ -140,8 +141,9 @@ export class YouTubeResolver implements TrackResolver {
       }
     }
 
-    // De-duplicate: an unfiltered search often repeats the top result.
-    results.tracks = dedupeBy(results.tracks, (t) => t.id).slice(0, limit);
+    // De-duplicate first, then demote junk (long mixes, video reuploads,
+    // junk titles) so the cleanest match survives the slice to `limit`.
+    results.tracks = rankTracks(dedupeBy(results.tracks, (t) => t.id)).slice(0, limit);
     results.artists = dedupeBy(results.artists, (a) => a.id).slice(0, limit);
     results.albums = dedupeBy(results.albums, (a) => a.id).slice(0, limit);
     results.playlists = dedupeBy(results.playlists, (p) => p.id).slice(0, limit);
