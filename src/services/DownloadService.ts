@@ -135,6 +135,14 @@ class DownloadServiceImpl {
 
       this.records.set(track.id, record);
       localFileSource.register(track.id, record.localUri);
+      // Critical: if this track was ever played before being downloaded,
+      // StreamResolverChain is still holding a cached (network) resolution
+      // for it, valid for up to 4h (see StreamResolver's STREAM_TTL). That
+      // cache is checked before any source -- including localFileSource --
+      // is ever consulted, so without this the download would sit unused
+      // and playback would keep hitting the network (and fail offline)
+      // until the old cache entry happened to expire on its own.
+      MusicService.invalidateStream(track);
       this.persist();
     } finally {
       this.progress.delete(track.id);
@@ -154,6 +162,10 @@ class DownloadServiceImpl {
 
     this.records.delete(trackId);
     localFileSource.unregister(trackId);
+    // Local-file cache entries never expire on their own (see startDownload's
+    // comment) -- without this, playing the track again after deleting the
+    // download would keep returning the now-deleted file path from cache.
+    MusicService.invalidateStream(record.track);
     this.persist();
     this.notifyChanged();
   }
