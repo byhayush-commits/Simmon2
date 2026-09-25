@@ -20,11 +20,14 @@ import { LibraryService } from '../services/LibraryService';
 import { MusicService } from '../services/MusicService';
 import { DownloadService } from '../services/DownloadService';
 import { TasteService } from '../services/TasteService';
-import {
-  PlaybackControls,
-  useRemoteCommand,
-  type PlaybackSession,
-} from 'react-native-playback-controls';
+// TEMP (crash bisection test): react-native-playback-controls suspected of a
+// native crash. Commented out, not deleted -- re-enable by uncommenting this
+// import and the block below once confirmed.
+// import {
+//   PlaybackControls,
+//   useRemoteCommand,
+//   type PlaybackSession,
+// } from 'react-native-playback-controls';
 
 type PlayerContextType = {
   // --- the original mock API, unchanged so existing screens keep working ---
@@ -597,86 +600,72 @@ export const PlayerProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   // so the scrubber is usable before the stream reports one.
   const duration = status.duration || currentTrack?.duration || 0;
 
-  // --- Android lock screen / notification media controls ---------------
+  // TEMP (crash bisection test): entire media-session block disabled -- see
+  // the commented-out import above. Re-enable both together once the crash
+  // is confirmed to be (or not be) this library.
   //
-  // expo-audio never registers a native MediaSession, so without this the
-  // OS falls back to a generic notification with +/-10s seek buttons
-  // instead of real Next/Previous. This library owns only that system-level
-  // "now playing" surface -- playback itself is still 100% expo-audio via
-  // playbackEngine, untouched.
-  const [mediaSession, setMediaSession] = useState<PlaybackSession | null>(null);
-
-  useEffect(() => {
-    if (Platform.OS !== 'android') return;
-    let cancelled = false;
-    let activeSession: PlaybackSession | null = null;
-
-    (async () => {
-      // Android 13+ won't show the notification without this; the library
-      // deliberately never requests it for us. startSession itself still
-      // succeeds either way, just silently without a visible notification.
-      if (Platform.Version >= 33) {
-        await PermissionsAndroid.request(
-          PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS
-        ).catch(() => undefined);
-      }
-      try {
-        const session = await PlaybackControls.startSession({
-          commands: ['play', 'pause', 'toggle-play-pause', 'next-track', 'previous-track'],
-        });
-        if (cancelled) {
-          void session.end();
-          return;
-        }
-        activeSession = session;
-        setMediaSession(session);
-      } catch {
-        // e.g. `foreground-required` if this ever runs from the background --
-        // the app just falls back to no lock screen controls, nothing else breaks.
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-      void activeSession?.end();
-      setMediaSession(null);
-    };
-  }, []);
-
-  // Keep the lock screen's title/artist/artwork in sync with the loaded track.
-  useEffect(() => {
-    if (!mediaSession || mediaSession.isEnded) return;
-    if (!currentTrack) return;
-    // Always the full object -- Android replaces rather than merges, so a
-    // partial call here would silently blank out omitted fields.
-    mediaSession.setNowPlaying({
-      title: currentTrack.title,
-      artist: currentTrack.artist?.name,
-      artwork: currentTrack.albumImageUrl || undefined,
-      durationSec: currentTrack.duration || undefined,
-    });
-  }, [mediaSession, currentTrack]);
-
-  // Keep the lock screen's play/pause state and seek bar in sync. Only on
-  // real transitions (per the library's docs) -- never on a position-polling
-  // timer, which status.position would turn this into if it were a dep.
-  useEffect(() => {
-    if (!mediaSession || mediaSession.isEnded) return;
-    mediaSession.setPlaybackState({
-      status: status.isBuffering ? 'buffering' : status.isPlaying ? 'playing' : 'paused',
-      positionSec: statusRef.current.position,
-    });
-  }, [mediaSession, status.isPlaying, status.isBuffering]);
-
-  useRemoteCommand(mediaSession, 'play', () => {
-    if (!statusRef.current.isPlaying) togglePlayPause();
-  });
-  useRemoteCommand(mediaSession, 'pause', () => {
-    if (statusRef.current.isPlaying) togglePlayPause();
-  });
-  useRemoteCommand(mediaSession, 'toggle-play-pause', togglePlayPause);
-  useRemoteCommand(mediaSession, 'next-track', next);
-  useRemoteCommand(mediaSession, 'previous-track', previous);
+  // const [mediaSession, setMediaSession] = useState<PlaybackSession | null>(null);
+  //
+  // useEffect(() => {
+  //   if (Platform.OS !== 'android') return;
+  //   let cancelled = false;
+  //   let activeSession: PlaybackSession | null = null;
+  //
+  //   (async () => {
+  //     if (Platform.Version >= 33) {
+  //       await PermissionsAndroid.request(
+  //         PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS
+  //       ).catch(() => undefined);
+  //     }
+  //     try {
+  //       const session = await PlaybackControls.startSession({
+  //         commands: ['play', 'pause', 'toggle-play-pause', 'next-track', 'previous-track'],
+  //       });
+  //       if (cancelled) {
+  //         void session.end();
+  //         return;
+  //       }
+  //       activeSession = session;
+  //       setMediaSession(session);
+  //     } catch {
+  //     }
+  //   })();
+  //
+  //   return () => {
+  //     cancelled = true;
+  //     void activeSession?.end();
+  //     setMediaSession(null);
+  //   };
+  // }, []);
+  //
+  // useEffect(() => {
+  //   if (!mediaSession || mediaSession.isEnded) return;
+  //   if (!currentTrack) return;
+  //   mediaSession.setNowPlaying({
+  //     title: currentTrack.title,
+  //     artist: currentTrack.artist?.name,
+  //     artwork: currentTrack.albumImageUrl || undefined,
+  //     durationSec: currentTrack.duration || undefined,
+  //   });
+  // }, [mediaSession, currentTrack]);
+  //
+  // useEffect(() => {
+  //   if (!mediaSession || mediaSession.isEnded) return;
+  //   mediaSession.setPlaybackState({
+  //     status: status.isBuffering ? 'buffering' : status.isPlaying ? 'playing' : 'paused',
+  //     positionSec: statusRef.current.position,
+  //   });
+  // }, [mediaSession, status.isPlaying, status.isBuffering]);
+  //
+  // useRemoteCommand(mediaSession, 'play', () => {
+  //   if (!statusRef.current.isPlaying) togglePlayPause();
+  // });
+  // useRemoteCommand(mediaSession, 'pause', () => {
+  //   if (statusRef.current.isPlaying) togglePlayPause();
+  // });
+  // useRemoteCommand(mediaSession, 'toggle-play-pause', togglePlayPause);
+  // useRemoteCommand(mediaSession, 'next-track', next);
+  // useRemoteCommand(mediaSession, 'previous-track', previous);
   // ------------------------------------------------------------------------
 
   const value = useMemo<PlayerContextType>(
