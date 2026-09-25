@@ -255,11 +255,9 @@ export default function ProfileScreen() {
           {showBuilder && (
             <View style={styles.builderBlock}>
               <View style={styles.builderRow}>
-                <FlowerMark size={32} />
-                <View style={styles.builderInfo}>
-                  <Text style={styles.builderName}>Ayush</Text>
-                  <Text style={styles.builderHandle}>@vivac_ayu</Text>
-                </View>
+                <FlowerMark size={28} />
+                <Text style={styles.builderName}>Ayush</Text>
+                <Text style={styles.builderHandle}>@vivac_ayu</Text>
               </View>
               <TouchableOpacity style={styles.followPill} activeOpacity={0.8} onPress={() => open(IG_URL)}>
                 <Text style={styles.followPillText}>Tap to Follow</Text>
@@ -505,10 +503,10 @@ const styles = StyleSheet.create({
   aboutLabel: { fontFamily: FONTS.regular, fontSize: 15, color: COLORS.text.secondary },
   aboutValue: { fontFamily: FONTS.medium, fontSize: 15, color: COLORS.text.primary },
 
-  /* Builder expansion — plain and sleek, same language as every other row. */
+  /* Builder expansion — one sleek line: mark + name + handle, then the pill. */
   builderBlock: {
     paddingHorizontal: SIZES.md,
-    paddingTop: SIZES.xs,
+    paddingTop: SIZES.md,
     paddingBottom: SIZES.md,
   },
   builderRow: {
@@ -517,14 +515,8 @@ const styles = StyleSheet.create({
     gap: SIZES.smd,
     marginBottom: SIZES.md,
   },
-  builderInfo: { flex: 1 },
-  builderName: { fontFamily: FONTS.bold, fontSize: 17, color: COLORS.text.primary },
-  builderHandle: {
-    fontFamily: FONTS.regular,
-    fontSize: 13,
-    color: COLORS.text.secondary,
-    marginTop: 2,
-  },
+  builderName: { fontFamily: FONTS.bold, fontSize: 16, color: COLORS.text.primary },
+  builderHandle: { fontFamily: FONTS.regular, fontSize: 13, color: COLORS.text.secondary },
   followPill: {
     alignItems: 'center',
     justifyContent: 'center',
